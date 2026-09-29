@@ -1,0 +1,6 @@
+{
+  "name": "نظام إدارة المدارس الخاصة المتكامل",
+  "description": "منصة متطورة لإدارة المدارس الخاصة متعددة الفروع والفصول والطلاب والمدرسين وأولياء الأمور بنظام أمني متكامل.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
