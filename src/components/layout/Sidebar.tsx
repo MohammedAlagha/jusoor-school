@@ -43,6 +43,7 @@ export function Sidebar({ currentView, onNavigate, isOpenMobile, onCloseMobile }
           { id: 'admins', label: 'مدراء الفروع والصلاحيات', icon: ShieldCheck },
           { id: 'users', label: 'المستخدمون والحسابات', icon: Users },
           { id: 'students', label: 'سجل الطلاب المركزي', icon: GraduationCap },
+          { id: 'parents', label: 'سجل أولياء الأمور (M:N)', icon: Users },
           { id: 'reports', label: 'التقارير المجمعة', icon: BarChart3 },
           { id: 'settings', label: 'إعدادات النظام وRLS', icon: Settings },
         ];
@@ -50,6 +51,7 @@ export function Sidebar({ currentView, onNavigate, isOpenMobile, onCloseMobile }
         return [
           { id: 'dashboard', label: 'لوحة تحكم الفرع', icon: LayoutDashboard },
           { id: 'students', label: 'إدارة الطلاب', icon: GraduationCap },
+          { id: 'parents', label: 'أولياء الأمور والربط', icon: Users },
           { id: 'attendance', label: 'الحضور والغياب', icon: CalendarCheck },
           { id: 'academic', label: 'الصفوف والشعب والمواد', icon: BookOpen },
           { id: 'teachers', label: 'المعلمون والتعيينات', icon: UserCheck },

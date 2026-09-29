@@ -7,11 +7,13 @@ import { AdminDashboard } from './components/views/AdminDashboard';
 import { TeacherDashboard } from './components/views/TeacherDashboard';
 import { ParentDashboard } from './components/views/ParentDashboard';
 import { StudentsManagementView } from './components/views/StudentsManagementView';
+import { ParentsManagementView } from './components/views/ParentsManagementView';
 import { AttendanceView } from './components/views/AttendanceView';
 import { TimetableConflictView } from './components/views/TimetableConflictView';
 import { GradingView } from './components/views/GradingView';
 import { RequestsView } from './components/views/RequestsView';
 import { AcademicStructureView } from './components/views/AcademicStructureView';
+import { TeachersManagementView } from './components/views/TeachersManagementView';
 import { BehaviorView } from './components/views/BehaviorView';
 import { AssignmentsView } from './components/views/AssignmentsView';
 import { AnnouncementsView } from './components/views/AnnouncementsView';
@@ -41,6 +43,9 @@ function MainAppShell() {
       case 'children':
         return <StudentsManagementView />;
 
+      case 'parents':
+        return <ParentsManagementView />;
+
       case 'attendance':
         return <AttendanceView />;
 
@@ -54,6 +59,9 @@ function MainAppShell() {
       case 'academic':
       case 'classes':
         return <AcademicStructureView />;
+
+      case 'teachers':
+        return <TeachersManagementView />;
 
       case 'requests':
         return <RequestsView />;

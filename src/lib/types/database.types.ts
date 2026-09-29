@@ -4,7 +4,7 @@ export type StudentStatus = 'active' | 'transferred' | 'graduated' | 'expelled';
 
 export type AttendanceStatus = 'present' | 'excused_absence' | 'unexcused_absence' | 'late' | 'early_leave';
 
-export type BehaviorType = 'positive' | 'negative' | 'infraction' | 'general';
+export type BehaviorType = 'positive' | 'negative' | 'warning' | 'parent_summons' | 'infraction' | 'general';
 
 export type RequestStatus = 'pending' | 'in_progress' | 'approved' | 'rejected' | 'completed';
 
@@ -161,6 +161,17 @@ export interface Parent {
   children: Student[];
 }
 
+export interface ParentStudentLink {
+  id: string;
+  parent_id: string;
+  student_id: string;
+  is_primary_contact: boolean;
+  relationship_type?: string;
+  parent_name?: string;
+  student_name?: string;
+  phone?: string;
+}
+
 export interface StudentAttendanceRecord {
   id: string;
   student_id: string;
@@ -255,6 +266,19 @@ export interface HomeworkAssignment {
   section_name?: string;
 }
 
+export interface HomeworkSubmission {
+  id: string;
+  assignment_id: string;
+  student_id: string;
+  student_name?: string;
+  submitted_at: string;
+  status: 'submitted' | 'late' | 'graded';
+  grade?: number;
+  max_grade?: number;
+  feedback?: string;
+  attachment_url?: string;
+}
+
 export interface BehaviorRecord {
   id: string;
   student_id: string;
@@ -276,7 +300,16 @@ export interface Announcement {
   content: string;
   published_at: string;
   created_by_name: string;
+  attachment_url?: string;
 }
+
+export type AdministrativeRequestType =
+  | 'certificate_request'
+  | 'transfer_request'
+  | 'absence_excuse'
+  | 'general_inquiry'
+  | 'appointment_request'
+  | 'custom_request';
 
 export interface AdministrativeRequest {
   id: string;
@@ -285,11 +318,12 @@ export interface AdministrativeRequest {
   student_id: string;
   student_name: string;
   parent_name: string;
-  type: 'document_request' | 'transfer_request' | 'certificate_request' | 'general_inquiry';
+  type: AdministrativeRequestType;
   type_label: string;
   description: string;
   status: RequestStatus;
   admin_response?: string;
+  attachment_url?: string;
   created_at: string;
   updated_at: string;
 }

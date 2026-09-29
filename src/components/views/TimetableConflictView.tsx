@@ -5,85 +5,187 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Modal } from '../ui/modal';
 import { Select, Input } from '../ui/input';
-import { Clock, AlertTriangle, CheckCircle2, Plus, Calendar } from 'lucide-react';
+import {
+  Clock,
+  AlertTriangle,
+  CheckCircle2,
+  Plus,
+  Calendar,
+  Users,
+  Building,
+  GraduationCap,
+  Trash2,
+  Sparkles,
+  HelpCircle,
+} from 'lucide-react';
 import { TimetableEntry } from '../../lib/types/database.types';
 
 export function TimetableConflictView() {
-  const { timetable, currentBranch } = useSchool();
-  const [entries, setEntries] = useState<TimetableEntry[]>(timetable);
+  const {
+    timetable,
+    sections,
+    teachers,
+    subjects,
+    currentBranch,
+    addTimetableEntry,
+    deleteTimetableEntry,
+    currentUser,
+  } = useSchool();
+
+  const [viewMode, setViewMode] = useState<'section' | 'teacher' | 'classroom'>('section');
+  const [selectedSectionId, setSelectedSectionId] = useState(sections[0]?.id || 'sec-01');
+  const [selectedTeacherId, setSelectedTeacherId] = useState(teachers[0]?.user_id || 'usr-teacher-ahmed');
+  const [selectedClassroom, setSelectedClassroom] = useState('قاعة 101');
+
   const [showAddModal, setShowAddModal] = useState(false);
-  const [conflictWarning, setConflictWarning] = useState<string | null>(null);
+  const [conflictError, setConflictError] = useState<{
+    type: 'teacher' | 'section' | 'classroom';
+    message: string;
+    suggestedPeriod?: number;
+    suggestedDay?: number;
+  } | null>(null);
 
-  // Form
-  const [selectedSection, setSelectedSection] = useState('sec-01');
-  const [selectedTeacher, setSelectedTeacher] = useState('usr-teacher-ahmed');
-  const [selectedSubject, setSelectedSubject] = useState('الرياضيات المتقدمة 1');
-  const [dayOfWeek, setDayOfWeek] = useState(0); // Sunday
-  const [periodNumber, setPeriodNumber] = useState(1);
-  const [classroom, setClassroom] = useState('قاعة 101');
+  // Form states
+  const [formSectionId, setFormSectionId] = useState(sections[0]?.id || 'sec-01');
+  const [formTeacherId, setFormTeacherId] = useState(teachers[0]?.user_id || 'usr-teacher-ahmed');
+  const [formSubjectId, setFormSubjectId] = useState(subjects[0]?.id || 'sub-01');
+  const [formDayOfWeek, setFormDayOfWeek] = useState(0); // Sunday
+  const [formPeriodNumber, setFormPeriodNumber] = useState(1);
+  const [formClassroom, setFormClassroom] = useState('قاعة 101');
 
-  const days = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'];
-  const periods = [1, 2, 3, 4, 5, 6, 7];
+  const days = [
+    { id: 0, name: 'الأحد' },
+    { id: 1, name: 'الإثنين' },
+    { id: 2, name: 'الثلاثاء' },
+    { id: 3, name: 'الأربعاء' },
+    { id: 4, name: 'الخميس' },
+  ];
 
-  // Conflict Detection Function
-  const checkConflict = (
-    sectionId: string,
-    teacherId: string,
+  const periods = [
+    { num: 1, time: '07:30 - 08:15' },
+    { num: 2, time: '08:20 - 09:05' },
+    { num: 3, time: '09:20 - 10:05' },
+    { num: 4, time: '10:10 - 10:55' },
+    { num: 5, time: '11:10 - 11:55' },
+    { num: 6, time: '12:00 - 12:45' },
+    { num: 7, time: '12:50 - 01:35' },
+  ];
+
+  const classrooms = ['قاعة 101', 'قاعة 102', 'معمل الفيزياء 1', 'معمل الكيمياء', 'قاعة 204'];
+
+  // Conflict Detection Engine checking ALL 3 types:
+  // 1. Teacher Conflict (المدرس في شعبتين بنفس الوقت)
+  // 2. Section Conflict (الشعبة تدرس مادتين بنفس الوقت)
+  // 3. Classroom Conflict (القاعة محجوزة لشعبتين بنفس الوقت)
+  const validateConflict = (
+    secId: string,
+    tchId: string,
+    room: string,
     day: number,
     period: number
-  ): { hasConflict: boolean; reason?: string } => {
-    // 1. Check Section Conflict (Same section cannot have 2 classes at same period)
-    const sectionConflict = entries.find(
-      (e) => e.section_id === sectionId && e.day_of_week === day && e.period_number === period
+  ) => {
+    // 1. Section Conflict
+    const secConflict = timetable.find(
+      (e) => e.section_id === secId && e.day_of_week === day && e.period_number === period
     );
-    if (sectionConflict) {
+    if (secConflict) {
+      // Find next free period for this section
+      const nextFree = periods.find(
+        (p) => !timetable.some((e) => e.section_id === secId && e.day_of_week === day && e.period_number === p.num)
+      );
       return {
-        hasConflict: true,
-        reason: `تعارض شعبة! الشعبة المحددة لديها بالفعل حصة (${sectionConflict.subject_name}) في الحصة رقم ${period}.`,
+        type: 'section' as const,
+        message: `تعارض شعبة! الشعبة المحددة مجدول لها مسبقاً (${secConflict.subject_name}) في الحصة رقم (${period}).`,
+        suggestedPeriod: nextFree ? nextFree.num : (period % 7) + 1,
+        suggestedDay: day,
       };
     }
 
-    // 2. Check Teacher Conflict (Same teacher cannot teach 2 classes at same period)
-    const teacherConflict = entries.find(
-      (e) => e.teacher_id === teacherId && e.day_of_week === day && e.period_number === period
+    // 2. Teacher Conflict
+    const tchConflict = timetable.find(
+      (e) => e.teacher_id === tchId && e.day_of_week === day && e.period_number === period
     );
-    if (teacherConflict) {
+    if (tchConflict) {
+      const nextFree = periods.find(
+        (p) => !timetable.some((e) => e.teacher_id === tchId && e.day_of_week === day && e.period_number === p.num)
+      );
       return {
-        hasConflict: true,
-        reason: `تعارض معلم! المعلم مسند له بالفعل حصة في (${teacherConflict.section_name}) في نفس الوقت والحصة رقم ${period}.`,
+        type: 'teacher' as const,
+        message: `تعارض معلم! المعلم يدرّس بالفعل في (${tchConflict.section_name}) في نفس التوقيت والحصة رقم (${period}).`,
+        suggestedPeriod: nextFree ? nextFree.num : (period % 7) + 1,
+        suggestedDay: day,
       };
     }
 
-    return { hasConflict: false };
+    // 3. Classroom Conflict
+    const roomConflict = timetable.find(
+      (e) => e.classroom === room && e.day_of_week === day && e.period_number === period
+    );
+    if (roomConflict) {
+      return {
+        type: 'classroom' as const,
+        message: `تعارض قاعة! (${room}) محجوزة مسبقاً لحصة (${roomConflict.subject_name} - ${roomConflict.section_name}) في هذا التوقيت.`,
+        suggestedPeriod: (period % 7) + 1,
+        suggestedDay: day,
+      };
+    }
+
+    return null;
   };
 
-  const handleAddEntry = () => {
-    const conflict = checkConflict(selectedSection, selectedTeacher, dayOfWeek, periodNumber);
-    if (conflict.hasConflict) {
-      setConflictWarning(conflict.reason || 'تعارض في الجدولة!');
+  const handleAddSubmit = () => {
+    const conflict = validateConflict(
+      formSectionId,
+      formTeacherId,
+      formClassroom,
+      formDayOfWeek,
+      formPeriodNumber
+    );
+
+    if (conflict) {
+      setConflictError(conflict);
       return;
     }
 
-    const newEntry: TimetableEntry = {
-      id: `tt-${Date.now()}`,
-      section_id: selectedSection,
-      subject_id: 'sub-01',
-      teacher_id: selectedTeacher,
-      day_of_week: dayOfWeek,
-      period_number: periodNumber,
-      start_time: '07:30',
-      end_time: '08:15',
-      classroom: classroom,
-      subject_name: selectedSubject,
-      teacher_name: selectedTeacher === 'usr-teacher-ahmed' ? 'أ. أحمد منصور' : 'أ. خالد التميمي',
-      section_name: selectedSection === 'sec-01' ? 'شعبة أ (ثانوي)' : 'شعبة أ (متوسط)',
-    };
+    const sec = sections.find((s) => s.id === formSectionId);
+    const sub = subjects.find((s) => s.id === formSubjectId);
+    const tch = teachers.find((t) => t.user_id === formTeacherId || t.id === formTeacherId);
 
-    setEntries([...entries, newEntry]);
+    addTimetableEntry({
+      section_id: formSectionId,
+      subject_id: formSubjectId,
+      teacher_id: formTeacherId,
+      day_of_week: formDayOfWeek,
+      period_number: formPeriodNumber,
+      classroom: formClassroom,
+      subject_name: sub?.name || 'مقرر دراسي',
+      teacher_name: tch?.profile.full_name || 'معلم الحصة',
+      section_name: sec?.name || 'شعبة أ',
+      start_time: periods[formPeriodNumber - 1]?.time.split(' - ')[0] || '07:30',
+      end_time: periods[formPeriodNumber - 1]?.time.split(' - ')[1] || '08:15',
+    });
+
     setShowAddModal(false);
-    setConflictWarning(null);
-    alert('تم حفظ الحصة في الجدول بنجاح دون أي تعارض زمني!');
+    setConflictError(null);
+    alert('تم إضافة الحصة وتثبيتها بالجدول بنجاح!');
   };
+
+  const applySuggestedResolution = () => {
+    if (!conflictError?.suggestedPeriod) return;
+    setFormPeriodNumber(conflictError.suggestedPeriod);
+    setConflictError(null);
+  };
+
+  // Filter timetable according to selected view mode
+  const filteredEntries = timetable.filter((entry) => {
+    if (viewMode === 'section') {
+      return entry.section_id === selectedSectionId;
+    } else if (viewMode === 'teacher') {
+      return entry.teacher_id === selectedTeacherId;
+    } else {
+      return entry.classroom === selectedClassroom;
+    }
+  });
 
   return (
     <div className="space-y-6">
@@ -93,170 +195,339 @@ export function TimetableConflictView() {
           <div className="flex items-center gap-2">
             <Clock className="w-6 h-6 text-blue-600" />
             <h1 className="text-xl font-bold text-slate-900">
-              إدارة الجداول الدراسية مع محرك منع التعارض (Conflict Prevention Engine)
+              محرك إدارة الجداول وكشف التعارضات (Conflict Prevention Engine)
             </h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            يتحقق النظام آلياً من عدم ازدواجية المعلم أو تكرار الشعبة في نفس الحصة الزمنية قبل الحفظ
+            كشف ومنع تعارضات المعلمين والشعب والقاعات آلياً مع اقتراح الحلول البديلة لفرع ({currentBranch.name})
           </p>
         </div>
-        <div className="flex items-center gap-2">
+
+        {currentUser.role !== 'parent' && (
           <Button
             variant="primary"
             onClick={() => {
-              setConflictWarning(null);
+              setConflictError(null);
               setShowAddModal(true);
             }}
             className="text-xs font-bold"
           >
             <Plus className="w-4 h-4 ml-1.5" />
-            إضافة حصة جديدة
+            إضافة حصة دراسية جديدة
           </Button>
+        )}
+      </div>
+
+      {/* Mode Navigation Tabs */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setViewMode('section')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              viewMode === 'section'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <GraduationCap className="w-4 h-4" />
+            جدول الشعبة (Section)
+          </button>
+
+          <button
+            onClick={() => setViewMode('teacher')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              viewMode === 'teacher'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            جدول المعلم (Teacher)
+          </button>
+
+          <button
+            onClick={() => setViewMode('classroom')}
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              viewMode === 'classroom'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Building className="w-4 h-4" />
+            جدول القاعة (Classroom)
+          </button>
+        </div>
+
+        {/* Dynamic Context Selector */}
+        <div className="flex items-center gap-2">
+          {viewMode === 'section' && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-bold">الشعبة:</span>
+              <select
+                value={selectedSectionId}
+                onChange={(e) => setSelectedSectionId(e.target.value)}
+                className="text-xs bg-white border border-slate-200 rounded-lg px-3 py-1.5 font-bold text-slate-800 cursor-pointer"
+              >
+                {sections.map((sec) => (
+                  <option key={sec.id} value={sec.id}>
+                    {sec.grade_name} — {sec.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {viewMode === 'teacher' && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-bold">المعلم:</span>
+              <select
+                value={selectedTeacherId}
+                onChange={(e) => setSelectedTeacherId(e.target.value)}
+                className="text-xs bg-white border border-slate-200 rounded-lg px-3 py-1.5 font-bold text-slate-800 cursor-pointer"
+              >
+                {teachers.map((tch) => (
+                  <option key={tch.id} value={tch.user_id}>
+                    {tch.profile.full_name} ({tch.specialization})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {viewMode === 'classroom' && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-bold">القاعة الدراسية:</span>
+              <select
+                value={selectedClassroom}
+                onChange={(e) => setSelectedClassroom(e.target.value)}
+                className="text-xs bg-white border border-slate-200 rounded-lg px-3 py-1.5 font-bold text-slate-800 cursor-pointer"
+              >
+                {classrooms.map((room) => (
+                  <option key={room} value={room}>
+                    {room}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Timetable Weekly Visual Grid */}
+      {/* Conflict Engine Highlights */}
+      <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-950">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>
+            <strong>محرك منع التعارض نشط:</strong> يفحص في أجزاء من الثانية تعارض المعلم، تعارض الشعبة، وتعارض القاعات الدراسية.
+          </span>
+        </div>
+        <Badge variant="success">0 تعارضات حالياً</Badge>
+      </div>
+
+      {/* Weekly Matrix Grid */}
       <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between w-full">
-            <CardTitle>الجدول الأسبوعي العام للفرع ({currentBranch.name})</CardTitle>
-            <Badge variant="purple">Constraint Validated</Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-right text-xs">
-              <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                <tr>
-                  <th className="p-3.5 border-l border-slate-200 w-24">اليوم</th>
-                  {periods.map((p) => (
-                    <th key={p} className="p-3.5 text-center border-l border-slate-100 last:border-0">
-                      الحصة {p}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {days.map((dayName, dayIdx) => (
-                  <tr key={dayIdx} className="hover:bg-slate-50/40">
-                    <td className="p-3.5 font-bold text-slate-900 bg-slate-50/60 border-l border-slate-200">
-                      {dayName}
-                    </td>
-                    {periods.map((p) => {
-                      const slotEntries = entries.filter(
-                        (e) => e.day_of_week === dayIdx && e.period_number === p
-                      );
-                      return (
-                        <td
-                          key={p}
-                          className="p-2 border-l border-slate-100 last:border-0 min-w-[130px] align-top"
-                        >
-                          {slotEntries.length > 0 ? (
-                            <div className="space-y-1.5">
-                              {slotEntries.map((e) => (
-                                <div
-                                  key={e.id}
-                                  className="p-2 bg-blue-50/80 border border-blue-200/80 rounded-lg text-right"
-                                >
-                                  <p className="font-bold text-blue-950 truncate">{e.subject_name}</p>
-                                  <p className="text-[10px] text-blue-700">{e.section_name}</p>
-                                  <p className="text-[10px] text-slate-500 mt-0.5 truncate">{e.teacher_name}</p>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="h-14 border border-dashed border-slate-200 rounded-lg flex items-center justify-center text-[10px] text-slate-300">
-                              فترة شاغرة
-                            </div>
-                          )}
-                        </td>
-                      );
-                    })}
-                  </tr>
+        <CardContent className="p-0 overflow-x-auto">
+          <table className="w-full text-right border-collapse text-xs">
+            <thead className="bg-slate-900 text-white font-bold">
+              <tr>
+                <th className="p-3 w-28 text-center border-l border-slate-800">اليوم</th>
+                {periods.map((p) => (
+                  <th key={p.num} className="p-3 text-center border-l border-slate-800 last:border-l-0 min-w-[130px]">
+                    <div>الحصة {p.num}</div>
+                    <div className="text-[10px] text-slate-400 font-mono font-normal mt-0.5">{p.time}</div>
+                  </th>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200 bg-white">
+              {days.map((day) => (
+                <tr key={day.id} className="hover:bg-slate-50/50">
+                  <td className="p-3 font-bold text-center bg-slate-50 text-slate-800 border-l border-slate-200">
+                    {day.name}
+                  </td>
+                  {periods.map((p) => {
+                    const entry = filteredEntries.find(
+                      (e) => e.day_of_week === day.id && e.period_number === p.num
+                    );
+
+                    return (
+                      <td
+                        key={p.num}
+                        className="p-2 border-l border-slate-100 last:border-l-0 align-top h-24"
+                      >
+                        {entry ? (
+                          <div className="p-2.5 rounded-xl bg-blue-50/80 border border-blue-200/90 h-full flex flex-col justify-between group relative">
+                            {currentUser.role !== 'parent' && (
+                              <button
+                                onClick={() => {
+                                  if (confirm('هل تريد حذف هذه الحصة من الجدول؟')) {
+                                    deleteTimetableEntry(entry.id);
+                                  }
+                                }}
+                                className="absolute top-1.5 left-1.5 text-slate-300 hover:text-rose-600 transition-colors cursor-pointer"
+                                title="حذف الحصة"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            )}
+                            <div>
+                              <span className="font-bold text-slate-900 text-xs block truncate">
+                                {entry.subject_name}
+                              </span>
+                              <span className="text-[10px] text-blue-700 font-medium block mt-0.5">
+                                {viewMode === 'teacher' ? entry.section_name : entry.teacher_name}
+                              </span>
+                            </div>
+                            <span className="text-[10px] font-mono text-slate-500 mt-1 block">
+                              📍 {entry.classroom}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="h-full flex items-center justify-center text-[10px] text-slate-300 rounded-lg border border-dashed border-slate-100 bg-slate-50/30">
+                            فارغة
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </CardContent>
       </Card>
 
-      {/* Add Period Modal with Conflict Detection Warning */}
+      {/* Add Timetable Entry Modal */}
       <Modal
         isOpen={showAddModal}
         onClose={() => setShowAddModal(false)}
-        title="تسكين حصة جديدة في الجدول"
-        description="سيقوم محرك النظام بفحص تعارضات المعلم والشعبة فوراً"
+        title="إضافة حصة دراسية للجدول"
+        description="يقوم النظام بالتحقق التلقائي من عدم وجود أي تعارض في المعلم أو الشعبة أو القاعة"
       >
         <div className="space-y-4">
-          {conflictWarning && (
-            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-start gap-2 animate-bounce">
-              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold">تم اكتشاف تعارض في الجدولة!</p>
-                <p className="mt-0.5">{conflictWarning}</p>
+          {/* Conflict Alert Banner with Proposed Resolution */}
+          {conflictError && (
+            <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl space-y-2 text-right">
+              <div className="flex items-center gap-2 text-rose-800 font-bold text-xs">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>تم اكتشاف تعارض حرج يمنع الحفظ:</span>
               </div>
+              <p className="text-xs text-rose-700 leading-relaxed">{conflictError.message}</p>
+              {conflictError.suggestedPeriod && (
+                <div className="pt-2 border-t border-rose-200/80 flex items-center justify-between">
+                  <span className="text-[11px] text-slate-700 font-semibold">
+                    💡 الحل المقترح: نقل الحصة إلى <strong>الحصة رقم {conflictError.suggestedPeriod}</strong>
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={applySuggestedResolution}
+                    className="text-xs py-0.5 px-2 font-bold"
+                  >
+                    تطبيق الحل المقترح
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
           <div className="grid grid-cols-2 gap-3">
             <Select
-              label="الشعبة الدراسية *"
-              value={selectedSection}
-              onChange={(e) => setSelectedSection(e.target.value)}
+              label="الشعبة المستهدفة *"
+              value={formSectionId}
+              onChange={(e) => {
+                setFormSectionId(e.target.value);
+                setConflictError(null);
+              }}
             >
-              <option value="sec-01">الصف الأول الثانوي - شعبة أ</option>
-              <option value="sec-02">الصف الأول الثانوي - شعبة ب</option>
-              <option value="sec-03">الصف الثالث المتوسط - شعبة أ</option>
+              {sections.map((sec) => (
+                <option key={sec.id} value={sec.id}>
+                  {sec.grade_name} — {sec.name}
+                </option>
+              ))}
             </Select>
 
             <Select
-              label="المعلم المكلف *"
-              value={selectedTeacher}
-              onChange={(e) => setSelectedTeacher(e.target.value)}
+              label="المقرر الدراسي *"
+              value={formSubjectId}
+              onChange={(e) => setFormSubjectId(e.target.value)}
             >
-              <option value="usr-teacher-ahmed">أ. أحمد منصور (رياضيات)</option>
-              <option value="usr-teacher-khaled">أ. خالد التميمي (فيزياء)</option>
+              {subjects.map((sub) => (
+                <option key={sub.id} value={sub.id}>
+                  {sub.name}
+                </option>
+              ))}
             </Select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <Select
+            label="المعلم المدرس *"
+            value={formTeacherId}
+            onChange={(e) => {
+              setFormTeacherId(e.target.value);
+              setConflictError(null);
+            }}
+          >
+            {teachers.map((tch) => (
+              <option key={tch.id} value={tch.user_id}>
+                {tch.profile.full_name} ({tch.specialization})
+              </option>
+            ))}
+          </Select>
+
+          <div className="grid grid-cols-3 gap-3">
             <Select
               label="اليوم *"
-              value={dayOfWeek}
-              onChange={(e) => setDayOfWeek(Number(e.target.value))}
+              value={formDayOfWeek}
+              onChange={(e) => {
+                setFormDayOfWeek(Number(e.target.value));
+                setConflictError(null);
+              }}
             >
-              {days.map((d, i) => (
-                <option key={i} value={i}>
-                  {d}
+              {days.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
                 </option>
               ))}
             </Select>
 
             <Select
               label="رقم الحصة *"
-              value={periodNumber}
-              onChange={(e) => setPeriodNumber(Number(e.target.value))}
+              value={formPeriodNumber}
+              onChange={(e) => {
+                setFormPeriodNumber(Number(e.target.value));
+                setConflictError(null);
+              }}
             >
               {periods.map((p) => (
-                <option key={p} value={p}>
-                  الحصة {p} (07:30 - 08:15)
+                <option key={p.num} value={p.num}>
+                  الحصة {p.num} ({p.time.split(' - ')[0]})
+                </option>
+              ))}
+            </Select>
+
+            <Select
+              label="القاعة الدراسية *"
+              value={formClassroom}
+              onChange={(e) => {
+                setFormClassroom(e.target.value);
+                setConflictError(null);
+              }}
+            >
+              {classrooms.map((room) => (
+                <option key={room} value={room}>
+                  {room}
                 </option>
               ))}
             </Select>
           </div>
 
-          <Input
-            label="اسم القاعة أو المعمل *"
-            value={classroom}
-            onChange={(e) => setClassroom(e.target.value)}
-          />
-
           <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
             <Button variant="outline" onClick={() => setShowAddModal(false)}>
               إلغاء
             </Button>
-            <Button variant="primary" onClick={handleAddEntry}>
-              فحص التعارض وحفظ الحصة
+            <Button variant="primary" onClick={handleAddSubmit}>
+              تأكيد وإضافة الحصة
             </Button>
           </div>
         </div>
